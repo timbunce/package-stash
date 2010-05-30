@@ -5,8 +5,6 @@ use warnings;
 use Carp qw(confess);
 use Scalar::Util qw(reftype);
 
-use constant PERLDB => ($^P); # to fold away debug/profile-only code
-
 =head1 NAME
 
 Package::Stash - routines for manipulating stashes
@@ -147,20 +145,26 @@ sub add_package_symbol {
 =head2 add_package_sub $variable $value $filename $firstlinenum $lastlinenum
 
 Calls L</add_package_symbol> to add a new package symbol, for the symbol given
-as C<$variable>, and optionally gives it an initial value of C<$value>.
+as C<$variable>, and gives it an initial value of C<$value>.
 C<$variable> should be the name of the subroutine, including the C<&> sigil.
 
-In addition, if the C<$^P> special variable was true when Package::Stash was
-loaded, and C<$^P & 0x10> is true when this method is called, then the special
-%DB::sub hash, used by debuggers and profilers, is updated to record the
-values of $filename, $firstlinenum, and $lastlinenum for the subroutine.
+In addition, if C<$^P & 0x10> is true then the special C<%DB::sub> hash is
+updated to record the values of $filename, $firstlinenum, and $lastlinenum for
+the subroutine.  This is especially useful for debuggers and profilers, which
+use C<%DB::sub> to determine where a subroutine was actually defined.
+See L<http://perldoc.perl.org/perldebguts.html#Debugger-Internals> for more
+information about C<%DB::sub>.
+
+If $filename is undefined then C<caller> is used to set $filename and
+$firstlinenum to the filename and line number of the call to C<add_package_symbol>.
+If $lastlinenum is undefined it defaults to $firstlinenum.
 
 =cut
 
 sub add_package_sub {
     my ($self, $variable, $initial_value, $filename, $firstlinenum, $lastlinenum) = @_;
 
-    if (PERLDB and $^P & 0x10) { # PERLDBf_SUBLINE
+    if ($^P and $^P & 0x10) { # fast check for PERLDBf_SUBLINE
 
         my $pkg = $self->name;
         my ($name, $sigil, $type) = ref $variable eq 'HASH'
@@ -169,7 +173,7 @@ sub add_package_sub {
 
         (undef, $filename, $firstlinenum) = caller
             if not defined $filename;
-        $lastlinenum = $firstlinenum
+        $lastlinenum = $firstlinenum ||= 0
             if not defined $lastlinenum;
 
         # http://perldoc.perl.org/perldebguts.html#Debugger-Internals
