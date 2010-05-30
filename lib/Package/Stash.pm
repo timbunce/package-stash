@@ -5,6 +5,8 @@ use warnings;
 use Carp qw(confess);
 use Scalar::Util qw(reftype);
 
+use constant PERLDB => ($^P); # to fold away debug/profile-only code
+
 =head1 NAME
 
 Package::Stash - routines for manipulating stashes
@@ -141,6 +143,42 @@ sub add_package_symbol {
     no warnings 'redefine', 'misc', 'prototype';
     *{$pkg . '::' . $name} = ref $initial_value ? $initial_value : \$initial_value;
 }
+
+=head2 add_package_sub $variable $value $filename $firstlinenum $lastlinenum
+
+Calls L</add_package_symbol> to add a new package symbol, for the symbol given
+as C<$variable>, and optionally gives it an initial value of C<$value>.
+C<$variable> should be the name of the subroutine, including the C<&> sigil.
+
+In addition, if the C<$^P> special variable was true when Package::Stash was
+loaded, and C<$^P & 0x10> is true when this method is called, then the special
+%DB::sub hash, used by debuggers and profilers, is updated to record the
+values of $filename, $firstlinenum, and $lastlinenum for the subroutine.
+
+=cut
+
+sub add_package_sub {
+    my ($self, $variable, $initial_value, $filename, $firstlinenum, $lastlinenum) = @_;
+
+    if (PERLDB and $^P & 0x10) { # PERLDBf_SUBLINE
+
+        my $pkg = $self->name;
+        my ($name, $sigil, $type) = ref $variable eq 'HASH'
+            ? @{$variable}{qw[name sigil type]}
+            : $self->_deconstruct_variable_name($variable);
+
+        (undef, $filename, $firstlinenum) = caller
+            if not defined $filename;
+        $lastlinenum = $firstlinenum
+            if not defined $lastlinenum;
+
+        # http://perldoc.perl.org/perldebguts.html#Debugger-Internals
+        $DB::sub{$pkg . '::' . $name} = "$filename:$firstlinenum-$lastlinenum";
+    }
+
+    return $self->add_package_symbol($variable, $initial_value);
+}
+
 
 =head2 remove_package_glob $name
 
